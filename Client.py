@@ -8,7 +8,7 @@ CLIENT.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 60)
 CLIENT.setsockopt(socket.SOL_TCP, socket.TCP_KEEPCNT, 4)
         # overrides value shown by sysctl net.ipv4.tcp_keepalive_intvl
 CLIENT.setsockopt(socket.SOL_TCP, socket.TCP_KEEPINTVL, 15)
-url = "http://web.stanford.edu/dept/its/support/techtraining/techbriefing-media/Intro_Net_91407.ppt"
+url = "http://web.stanford.edu/class/cs231a/assignments.html"
 class constant:
     def __init__(self, url):
         index = 0
@@ -66,7 +66,7 @@ def _sendRequestWithContentLength(fileName, ContentLength, data):
     dataLen = ContentLength
     try:
         while (True):        
-            if not data : break
+            if not data: break
             f.write(data)
             data = CLIENT.recv(dataLen)
     except socket.error as e:
@@ -81,13 +81,19 @@ def _sendRequest(const):
     Message = _message(const)
     CLIENT.send(Message.encode())
     data = CLIENT.recv(dataLen)
-    
-    responde = data.decode("latin-1").split("\r\n\r\n")[0]
+    responde = ""
+    ContentLength = 0
+    D = ""
+
+    if ".html" in const.fileName:
+        x = data.decode("latin-1").find("<!DOCTYPE")
+        responde = data.decode("latin-1")[:x]
+        D = data.decode("latin-1")[x:]
+    else:
+        responde = data.decode("latin-1").split("\r\n\r\n")[0]
+        D = data.decode("latin-1").split("\r\n\r\n")[1]
+
     ContentLength = _getContentLength(responde)
-    D = data.decode("latin-1").split("\r\n\r\n")[1]
-
-    print(responde)
-
     if (ContentLength==-1) :
         _sendRequestWithChunked()
     else : _sendRequestWithContentLength(const.fileName, ContentLength, D.encode("latin-1"))
