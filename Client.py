@@ -1,4 +1,5 @@
 import socket
+import time
 
 CLIENT = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 CLIENT.setsockopt( socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
@@ -7,7 +8,7 @@ CLIENT.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 60)
 CLIENT.setsockopt(socket.SOL_TCP, socket.TCP_KEEPCNT, 4)
         # overrides value shown by sysctl net.ipv4.tcp_keepalive_intvl
 CLIENT.setsockopt(socket.SOL_TCP, socket.TCP_KEEPINTVL, 15)
-url = "http://web.stanford.edu/class/cs231a/project.html"
+url = "http://web.stanford.edu/dept/its/support/techtraining/techbriefing-media/Intro_Net_91407.ppt"
 class constant:
     def __init__(self, url):
         index = 0
@@ -39,6 +40,7 @@ def _message(const):
 
 def _connect(const):
     IP = _getIP(const.link)
+    
     PORT = 80
     try:
         print(f"Connecting to {IP}:{PORT}")
@@ -61,25 +63,21 @@ def _sendRequestWithChunked():
 
 def _sendRequestWithContentLength(fileName, ContentLength, data):
     f = open(fileName, "wb")
-    dataLen = 1024*1024
-
+    dataLen = ContentLength
     try:
         while (True):        
-            print(ContentLength, len(data))
+            if not data : break
             f.write(data)
-            ContentLength -= len(data)
-            if ContentLength==0:
-                break
-            print(ContentLength, len(data))
             data = CLIENT.recv(dataLen)
     except socket.error as e:
         print(f"Socket error: {e}")
+    
     f.close()
     CLIENT.close()
 
 
 def _sendRequest(const):
-    dataLen = 1024*1024
+    dataLen = 1024
     Message = _message(const)
     CLIENT.send(Message.encode())
     data = CLIENT.recv(dataLen)
@@ -99,7 +97,7 @@ def _sendRequest(const):
 def _main():
     const = constant(url)
     # print(const.fileName)
-    # print(const.link)
+    print(const.link)
     # print(const.tag)
     _connect(const)
     _sendRequest(const)
