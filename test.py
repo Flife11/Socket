@@ -1,16 +1,25 @@
-a = b"400\r\n\xd7\xf5\xfas\x9b\xed\\<98\xbaI\xd9i'"
-c = b"\xf5\xfas\x9b\xed\\<98\xbaI\xd9i'"
+import logging
+import threading
+import time
 
-def _cutChunkedLength(data):
-    if (type(data)==type("1")):
-        chunkSize = int(data[:data.find("\r\n")], base=16)
-        D = data[data.find("\r\n")+2:]
-        return (chunkSize + 2, D)
-    else: 
-        chunkSize = int(data.split(b'\r\n')[0].decode("latin-1"), base=16)
-        data = data.split(b'\r\n')[1]
-        print(data)
-        return (chunkSize + 1, data)
+def thread_function(name):
+    logging.info("Thread %s: starting", name)
+    time.sleep(2)
+    logging.info("Thread %s: finishing", name)
 
-d = _cutChunkedLength(a)
-print(d)
+if __name__ == "__main__":
+    format = "%(asctime)s: %(message)s"
+    logging.basicConfig(format=format, level=logging.INFO,
+                        datefmt="%H:%M:%S")
+
+    threads = list()
+    for index in range(3):
+        logging.info("Main    : create and start thread %d.", index)
+        x = threading.Thread(target=thread_function, args=(index,))
+        threads.append(x)
+        x.start()
+
+    for index, thread in enumerate(threads):
+        logging.info("Main    : before joining thread %d.", index)
+        thread.join()
+        logging.info("Main    : thread %d done", index)

@@ -1,27 +1,36 @@
-import chunk
+
 import socket
-import time
+from bs4 import BeautifulSoup
+import os
+import sys
+import concurrent.futures
+import threading
 
 CLIENT = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-CLIENT.setsockopt( socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-CLIENT.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 60)
-        # overrides value shown by sysctl net.ipv4.tcp_keepalive_probes
-CLIENT.setsockopt(socket.SOL_TCP, socket.TCP_KEEPCNT, 4)
-        # overrides value shown by sysctl net.ipv4.tcp_keepalive_intvl
-CLIENT.setsockopt(socket.SOL_TCP, socket.TCP_KEEPINTVL, 15)
-url = "anglesharp.azurewebsites.net/Chunked"
+# CLIENT.setsockopt( socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+# CLIENT.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 60)
+#         # overrides value shown by sysctl net.ipv4.tcp_keepalive_probes
+# CLIENT.setsockopt(socket.SOL_TCP, socket.TCP_KEEPCNT, 4)
+#         # overrides value shown by sysctl net.ipv4.tcp_keepalive_intvl
+# CLIENT.setsockopt(socket.SOL_TCP, socket.TCP_KEEPINTVL, 15)
+
 class constant:
     def __init__(self, url):
+        url = url.split("http://")[1]
         if (url[len(url)-1]!='/' and len(url.split("/"))==1): url = url + '/'
         path = url.split("/")
+        if (len(path)>2): self.folder = 1
+        else: self.folder = 0
         self.link = path[0]
         self.fileName = path[len(path)-1]
-        if (self.fileName==""):
-            path.pop(0)
+            
         if (self.fileName=="" or self.fileName.find('.')==-1) : 
             self.fileName = "index.html"
-        
+        path.pop(0)
+        self.folderName = self.link + "_" + path[len(path)-2] 
         self.tag = '/'.join(path)
+
+        self.fileName = self.link + "_" + self.fileName
 
 
 def _getIP(link):
@@ -93,21 +102,27 @@ def _sendRequestWithChunked(fileName, chunkSize, data):
         print(f"Socket error: {e}")
     
     f.close()
-    CLIENT.close()
 
 # CONTENT LENGTH
 def _sendRequestWithContentLength(fileName, dataLen, data):
     f = open(fileName, "wb")
+    print(fileName)
+    Length = dataLen
     try:
         while (True):        
             if not data: break
             f.write(data)
-            data = CLIENT.recv(dataLen)
+            Length -= len(data)
+            # if (Length<0): 
+            #     print(data) 
+            #     break
+            # print(Length)
+            if (Length==0): break
+            data = CLIENT.recv(Length)
     except socket.error as e:
         print(f"Socket error: {e}")
     
     f.close()
-    CLIENT.close()
 
 
 def Status(responde):
@@ -119,6 +134,7 @@ def Status(responde):
 def _sendRequest(const):
     dataLen = 10000
     Message = _message(const)
+    print(Message)
     CLIENT.send(Message.encode())
 
     data = CLIENT.recv(dataLen)
@@ -140,30 +156,65 @@ def _sendRequest(const):
         print("Request fail")
         print(responde)
         return
-        
-    #print(data)
-    ContentLength = _getContentLength(responde)
     print(responde)
+    ContentLength = _getContentLength(responde)
     if (ContentLength==-1) :
         #print(D.encode("latin-1"))
         tmp = _cutChunkedLength(D)
         chunkSize = tmp[0]
         D = tmp[1]
-        print(chunkSize)
+        #print(chunkSize)
         _sendRequestWithChunked(const.fileName, chunkSize, D.encode("latin-1"))
     else : _sendRequestWithContentLength(const.fileName, ContentLength, D.encode("latin-1"))
 
     
 
-def _main():
-    const = constant(url)
-    print(const.fileName)
-    print(const.link)
-    print(const.tag)
-    #const.fileName = "test.jpg"
+    
+def _downloadAllFiles(url, fileName, folderName):
+    # Get file name
+    f = open(fileName)
+    soup = BeautifulSoup(f, 'html.parser')
+    links = []
+    for a in soup.find_all('a'):
+        link = a.get("href")
+        if link.find('.')!=-1:
+            links.append(link)
 
+    # Make folder
+    current_directory = os.getcwd()
+    final_directory = os.path.join(current_directory, r'{}'.format(folderName))
+    if not os.path.exists(final_directory):
+        os.makedirs(final_directory)
+
+    consts = list()
+    for link in links:
+        fileName = os.path.join(final_directory, link)
+        c = constant(url + link)
+        c.fileName = fileName
+        consts.append(c)
+    
+    consts = consts[:3]
+    #print(consts)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        executor.map(_sendRequest, consts)
+    
+    
+def _main():
+    URLS = sys.argv[1:]
+    const = constant(URLS[0])
+    # print(const.fileName)
+    # print(const.link)
+    # print(const.tag)
+    # print(const.folderName)
+    # print(const.folder)
+    
     _connect(const)
     _sendRequest(const)
+
+    if (const.folder==1):
+        _downloadAllFiles(URLS[0], const.fileName, const.folderName)
+    CLIENT.close()
+
 
 _main()
 
