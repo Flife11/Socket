@@ -6,7 +6,6 @@ import sys
 import concurrent.futures
 import threading
 
-CLIENT = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 # CLIENT.setsockopt( socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
 # CLIENT.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 60)
 #         # overrides value shown by sysctl net.ipv4.tcp_keepalive_probes
@@ -50,15 +49,16 @@ def _message(const):
 def _connect(const):
     IP = _getIP(const.link)
     PORT = 80
-
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         print(f"Connecting to {IP}:{PORT}")
-        CLIENT.connect((IP, PORT))
-        c = CLIENT.getsockname()
+        client.connect((IP, PORT))
+        c = client.getsockname()
         print(f"By IP: {c}")
         print(f"Connect successful!\n")
     except socket.error as e:
         print(f"Socket error: {e}")
+    return client
 
 
 def _getContentLength(responde):
@@ -72,39 +72,34 @@ def _cutChunkedLength(data):
         D = data[data.find("\r\n")+2:]
         return (chunkSize + 2, D)
     else: 
-        print(data)
         chunkSize = int(data.split(b'\r\n')[0].decode("latin-1"), base=16)
         data = data.split(b'\r\n')[1]
         return (chunkSize + 2, data)
         
 
 #CHUNKED
-def _sendRequestWithChunked(fileName, chunkSize, data):
+def _sendRequestWithChunked(client, fileName, chunkSize, data):
     f = open(fileName, "wb")
     try:
         while (True):        
             chunkSize -= len(data)
             if (chunkSize==0): data = data.rstrip(b'\r\n')
             f.write(data)
-            print(chunkSize)
             if (chunkSize==0): 
-                print(data)
-                data = CLIENT.recv(20)    
+                data = client.recv(20)    
                 tmp = _cutChunkedLength(data)
                 chunkSize = tmp[0]
                 data = tmp[1]
-                print(data)
-                print(f"new chunk: {chunkSize}")
                 if chunkSize==2: break
             else:
-                data = CLIENT.recv(chunkSize)
+                data = client.recv(chunkSize)
     except socket.error as e:
         print(f"Socket error: {e}")
     
     f.close()
 
 # CONTENT LENGTH
-def _sendRequestWithContentLength(fileName, dataLen, data):
+def _sendRequestWithContentLength(client, fileName, dataLen, data):
     f = open(fileName, "wb")
     print(fileName)
     Length = dataLen
@@ -113,12 +108,8 @@ def _sendRequestWithContentLength(fileName, dataLen, data):
             if not data: break
             f.write(data)
             Length -= len(data)
-            # if (Length<0): 
-            #     print(data) 
-            #     break
-            # print(Length)
             if (Length==0): break
-            data = CLIENT.recv(Length)
+            data = client.recv(Length)
     except socket.error as e:
         print(f"Socket error: {e}")
     
@@ -131,13 +122,14 @@ def Status(responde):
     return 0
     
 
-def _sendRequest(const):
+def _sendRequest(client, const):
+    
     dataLen = 10000
     Message = _message(const)
     print(Message)
-    CLIENT.send(Message.encode())
+    client.send(Message.encode())
 
-    data = CLIENT.recv(dataLen)
+    data = client.recv(dataLen)
 
     responde = ""
     ContentLength = 0
@@ -156,16 +148,15 @@ def _sendRequest(const):
         print("Request fail")
         print(responde)
         return
+
     print(responde)
     ContentLength = _getContentLength(responde)
     if (ContentLength==-1) :
-        #print(D.encode("latin-1"))
         tmp = _cutChunkedLength(D)
         chunkSize = tmp[0]
         D = tmp[1]
-        #print(chunkSize)
-        _sendRequestWithChunked(const.fileName, chunkSize, D.encode("latin-1"))
-    else : _sendRequestWithContentLength(const.fileName, ContentLength, D.encode("latin-1"))
+        _sendRequestWithChunked(client, const.fileName, chunkSize, D.encode("latin-1"))
+    else : _sendRequestWithContentLength(client, const.fileName, ContentLength, D.encode("latin-1"))
 
     
 
@@ -193,27 +184,25 @@ def _downloadAllFiles(url, fileName, folderName):
         c.fileName = fileName
         consts.append(c)
     
-    consts = consts[:3]
-    #print(consts)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        executor.map(_sendRequest, consts)
+    for const in consts:
+        _sendRequest(const)
     
     
-def _main():
-    URLS = sys.argv[1:]
-    const = constant(URLS[0])
-    # print(const.fileName)
-    # print(const.link)
-    # print(const.tag)
-    # print(const.folderName)
-    # print(const.folder)
+def thread_function(url):
     
-    _connect(const)
-    _sendRequest(const)
+    const = constant(url)
+    client = _connect(const)
+    _sendRequest(client, const)
 
     if (const.folder==1):
-        _downloadAllFiles(URLS[0], const.fileName, const.folderName)
-    CLIENT.close()
+        _downloadAllFiles(url, const.fileName, const.folderName)
+    client.close()
+
+
+def _main():
+    URLS = sys.argv[1:]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(URLS)) as executor:
+        executor.map(thread_function, URLS)
 
 
 _main()
