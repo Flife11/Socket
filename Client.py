@@ -4,7 +4,6 @@ from bs4 import BeautifulSoup
 import os
 import sys
 import concurrent.futures
-import threading
 
 # CLIENT.setsockopt( socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
 # CLIENT.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 60)
@@ -51,10 +50,10 @@ def _connect(const):
     PORT = 80
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        print(f"Connecting to {IP}:{PORT}")
+        #print(f"Connecting to {IP}:{PORT}")
         client.connect((IP, PORT))
         c = client.getsockname()
-        print(f"By IP: {c}")
+        #print(f"By IP: {c}")
         print(f"Connect successful!\n")
     except socket.error as e:
         print(f"Socket error: {e}")
@@ -78,7 +77,7 @@ def _cutChunkedLength(data):
         
 
 #CHUNKED
-def _sendRequestWithChunked(client, fileName, chunkSize, data):
+def _receiveWithChunked(client, fileName, chunkSize, data):
     f = open(fileName, "wb")
     try:
         while (True):        
@@ -95,13 +94,12 @@ def _sendRequestWithChunked(client, fileName, chunkSize, data):
                 data = client.recv(chunkSize)
     except socket.error as e:
         print(f"Socket error: {e}")
-    
-    f.close()
+    finally:
+        f.close()
 
 # CONTENT LENGTH
-def _sendRequestWithContentLength(client, fileName, dataLen, data):
+def _receiveWithContentLength(client, fileName, dataLen, data):
     f = open(fileName, "wb")
-    print(fileName)
     Length = dataLen
     try:
         while (True):        
@@ -109,10 +107,11 @@ def _sendRequestWithContentLength(client, fileName, dataLen, data):
             f.write(data)
             Length -= len(data)
             if (Length==0): break
-            data = client.recv(Length)
+            data = client.recv(10000)
     except socket.error as e:
         print(f"Socket error: {e}")
-    f.close()
+    finally:
+        f.close()
 
 
 def Status(responde):
@@ -122,18 +121,20 @@ def Status(responde):
     
 
 def _sendRequest(client, const):
-    
+    # Send message
     dataLen = 10000
     Message = _message(const)
-    print(Message)
     client.send(Message.encode())
 
+    # Recieve header
     data = client.recv(dataLen)
 
     responde = ""
     ContentLength = 0
     D = ""
     chunkSize = 0
+
+    # Cut header
     if ".html" in const.fileName:
         x = data.decode("latin-1").find("\r\n\r\n")
         responde = data.decode("latin-1")[:x]
@@ -147,17 +148,16 @@ def _sendRequest(client, const):
         print(responde)
         return
 
-    print(responde)
+    # Receive data
     ContentLength = _getContentLength(responde)
     if (ContentLength==-1) :
         tmp = _cutChunkedLength(D)
         chunkSize = tmp[0]
         D = tmp[1]
-        _sendRequestWithChunked(client, const.fileName, chunkSize, D.encode("latin-1"))
-    else : _sendRequestWithContentLength(client, const.fileName, ContentLength, D.encode("latin-1"))
+        _receiveWithChunked(client, const.fileName, chunkSize, D.encode("latin-1"))
+    else : _receiveWithContentLength(client, const.fileName, ContentLength, D.encode("latin-1"))
 
     
-
     
 def _downloadAllFiles(client, url, fileName, folderName):
     # Get file name
@@ -183,10 +183,9 @@ def _downloadAllFiles(client, url, fileName, folderName):
         consts.append(c)
 
     for const in consts:
-        #print(const.fileName)
         _sendRequest(client, const)
-    
-    
+
+
 def thread_function(url):
     
     const = constant(url)
@@ -194,7 +193,7 @@ def thread_function(url):
     _sendRequest(client, const)
 
     if (const.folder==1):
-        _downloadAllFiles(client, url, const.fileName, const.folderName)
+         _downloadAllFiles(client, url, const.fileName, const.folderName)
     client.close()
 
 
